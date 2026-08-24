@@ -4,29 +4,28 @@ const db              = require('../config/db');
 const mqttClient      = require('../config/mqtt');
 const { verifyToken } = require('../config/auth');
 
-const TOPIC_TIMBRE = 'drillmaster/timbre/comando';
+const TOPIC_TIMBRE = 'cmnd/drillmaster/POWER';
 
 router.post('/iniciar', verifyToken, async (req, res) => {
   const { observaciones } = req.body;
-  const id_usuario        = req.usuario.id_usuario;
+  // Extraemos el id del token. Si en el JWT se guardó como id_usuario, lo asignamos a id_directivo
+  const id_directivo      = req.usuario.id_usuario || req.usuario.id_directivo;
 
   const conn = await db.getConnection();
   try {
     const fechaInicio = new Date();
 
+    // CORREGIDO: Se cambió id_usuario por id_directivo en la consulta SQL
     const [result] = await conn.execute(
-      `INSERT INTO simulacros (id_usuario, fecha_inicio, estado, observaciones)
+      `INSERT INTO simulacros (id_directivo, fecha_inicio, estado, observaciones)
        VALUES (?, ?, 'activo', ?)`,
-      [id_usuario, fechaInicio, observaciones || null]
+      [id_directivo, fechaInicio, observaciones || null]
     );
 
     const id_simulacro = result.insertId;
 
-    const payload = JSON.stringify({
-      accion: 'ENCENDER',
-      id_simulacro,
-      timestamp: fechaInicio.toISOString(),
-    });
+    // Tasmota recibe "ON" en texto plano para encender el relay
+    const payload = 'ON';
 
     mqttClient.publish(TOPIC_TIMBRE, payload, { qos: 1 }, (err) => {
       if (err) console.error('[MQTT] Error al publicar:', err.message);
@@ -47,6 +46,7 @@ router.post('/iniciar', verifyToken, async (req, res) => {
     conn.release();
   }
 });
+
 /**
  * PUT /api/simulacros/:id/finalizar
  * Headers: Authorization: Bearer <token>
@@ -83,12 +83,8 @@ router.put('/:id/finalizar', verifyToken, async (req, res) => {
       [fechaFin, id_simulacro]
     );
 
-    // Publicar APAGAR en MQTT
-    const payload = JSON.stringify({
-      accion:       'APAGAR',
-      id_simulacro,
-      timestamp:    fechaFin.toISOString(),
-    });
+    // Tasmota recibe "OFF" en texto plano para apagar el relay
+    const payload = 'OFF';
 
     mqttClient.publish(TOPIC_TIMBRE, payload, { qos: 1 }, (err) => {
       if (err) console.error('[MQTT] Error al publicar:', err.message);
@@ -109,4 +105,5 @@ router.put('/:id/finalizar', verifyToken, async (req, res) => {
     conn.release();
   }
 });
+
 module.exports = router;
