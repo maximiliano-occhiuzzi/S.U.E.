@@ -1,0 +1,10 @@
+import { AlertTriangle, Clock3, Map, Users } from 'lucide-react';
+import { PanelHeading } from './SimulacroControl';
+import type { Report } from './EstadoEnVivo';
+
+type Props = { reports: Report[]; sectorCount: number; connectedTeachers?: number };
+export default function DashboardMetrics({ reports, sectorCount, connectedTeachers = 0 }: Props) {
+  const critical = reports.filter((item) => ['incendio', 'lesionado'].includes(item.tipo_incidencia)).length; const sectors = new Set(reports.map((item) => typeof item.sector === 'string' ? item.sector : item.sector?.nombre)).size; const latest = reports[0];
+  const cards = [{ label: 'Incidencias totales', value: reports.length, icon: AlertTriangle, color: 'blue' }, { label: 'Incidencias criticas', value: critical, icon: AlertTriangle, color: 'red' }, { label: 'Sectores reportados', value: `${sectors}/${sectorCount || '-'}`, icon: Map, color: 'green' }, { label: 'Docentes conectados', value: connectedTeachers, icon: Users, color: 'amber' }];
+  return <section className="panel metrics-panel"><PanelHeading number="3" title="Dashboard" subtitle="Resumen general del simulacro en tiempo real." color="violet" /><div className="metric-grid">{cards.map(({ label, value, icon: Icon, color }) => <div className={`metric-card ${color}`} key={label}><div><span>{label}</span><strong>{value}</strong></div><Icon size={25} /></div>)}</div><div className="metric-bottom"><div className="average"><span>Tiempo promedio<br />de evacuacion</span><strong>-</strong><small><Clock3 size={16} /> Sin datos</small></div><div className="general-status"><span>Estado general</span><div><i className="green" /> {reports.filter((item) => item.estado_sector === 'evacuado').length}<i className="amber" /> {reports.filter((item) => item.estado_sector === 'en_proceso').length}<i className="red" /> {critical}</div></div><div className="latest"><span>Ultima incidencia</span>{latest ? <><strong>{latest.tipo_incidencia.replace('_', ' ')}</strong><small>{typeof latest.sector === 'string' ? latest.sector : latest.sector?.nombre ?? 'Sector sin asignar'}</small></> : <small>Aun no hay incidencias</small>}</div></div></section>;
+}
