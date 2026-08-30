@@ -10,6 +10,7 @@ require('./config/mqtt');
 const authRouter        = require('./routes/auth');
 const simulacrosRouter  = require('./routes/simulacros');
 const incidenciasRouter = require('./routes/incidencias');
+const usuariosRouter    = require('./routes/usuarios');
 
 const app  = express();
 const PORT = process.env.PORT || 3001;
@@ -30,6 +31,7 @@ app.get('/health', (_req, res) =>
 app.use('/api/auth',        authRouter);
 app.use('/api/simulacros',  simulacrosRouter);
 app.use('/api/incidencias', incidenciasRouter);
+app.use('/api/usuarios',    usuariosRouter);
 
 app.use((_req, res) =>
   res.status(404).json({ ok: false, mensaje: 'Ruta no encontrada.' })

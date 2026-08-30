@@ -1,0 +1,282 @@
+// src/routes/usuarios.js
+const express                     = require('express');
+const router                      = express.Router();
+const bcrypt                      = require('bcryptjs');
+const db                          = require('../config/db');
+const { verifyToken, requireRol } = require('../middlewares/auth');
+
+const DOMINIO_INSTITUCIONAL = 'fatimarem.edu.ar';
+const ROLES_VALIDOS         = ['directivo', 'docente'];
+
+// ─── GET /api/usuarios ────────────────────────────────────────────────────────
+// Lista todos los usuarios activos
+router.get('/', verifyToken, requireRol('directivo'), async (req, res) => {
+  const conn = await db.getConnection();
+  try {
+    const [usuarios] = await conn.execute(
+      `SELECT id_usuario, nombre, email, rol, activo, 
+              (pin_hash IS NOT NULL) AS tiene_pin, created_at
+       FROM usuarios
+       ORDER BY nombre ASC`
+    );
+    return res.status(200).json({ ok: true, usuarios });
+  } catch (err) {
+    console.error('[GET /usuarios]', err.message);
+    return res.status(500).json({ ok: false, mensaje: 'Error interno del servidor.' });
+  } finally {
+    conn.release();
+  }
+});
+
+// ─── GET /api/usuarios/:id ────────────────────────────────────────────────────
+router.get('/:id', verifyToken, requireRol('directivo'), async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id)) return res.status(400).json({ ok: false, mensaje: 'ID inválido.' });
+
+  const conn = await db.getConnection();
+  try {
+    const [rows] = await conn.execute(
+      `SELECT id_usuario, nombre, email, rol, activo,
+              (pin_hash IS NOT NULL) AS tiene_pin, created_at
+       FROM usuarios WHERE id_usuario = ? LIMIT 1`,
+      [id]
+    );
+    if (rows.length === 0)
+      return res.status(404).json({ ok: false, mensaje: 'Usuario no encontrado.' });
+
+    return res.status(200).json({ ok: true, usuario: rows[0] });
+  } catch (err) {
+    console.error('[GET /usuarios/:id]', err.message);
+    return res.status(500).json({ ok: false, mensaje: 'Error interno del servidor.' });
+  } finally {
+    conn.release();
+  }
+});
+
+// ─── POST /api/usuarios ───────────────────────────────────────────────────────
+// Crear usuario nuevo (solo directivo)
+router.post('/', verifyToken, requireRol('directivo'), async (req, res) => {
+  const { nombre, email, password, rol } = req.body;
+
+  // Validaciones
+  if (!nombre || !email || !password || !rol) {
+    return res.status(400).json({
+      ok:      false,
+      mensaje: 'nombre, email, password y rol son obligatorios.',
+    });
+  }
+
+  const dominio = email.split('@')[1];
+  if (dominio !== DOMINIO_INSTITUCIONAL) {
+    return res.status(400).json({
+      ok:      false,
+      mensaje: `El email debe ser @${DOMINIO_INSTITUCIONAL}.`,
+    });
+  }
+
+  if (!ROLES_VALIDOS.includes(rol)) {
+    return res.status(400).json({
+      ok:      false,
+      mensaje: `El rol debe ser: ${ROLES_VALIDOS.join(', ')}.`,
+    });
+  }
+
+  if (password.length < 6) {
+    return res.status(400).json({
+      ok:      false,
+      mensaje: 'La contraseña debe tener al menos 6 caracteres.',
+    });
+  }
+
+  const conn = await db.getConnection();
+  try {
+    // Verificar que el email no exista
+    const [existe] = await conn.execute(
+      'SELECT id_usuario FROM usuarios WHERE email = ? LIMIT 1',
+      [email]
+    );
+    if (existe.length > 0) {
+      return res.status(409).json({
+        ok:      false,
+        mensaje: 'Ya existe un usuario con ese email.',
+      });
+    }
+
+    const password_hash = await bcrypt.hash(password, 10);
+
+    const [result] = await conn.execute(
+      `INSERT INTO usuarios (nombre, email, password_hash, rol, activo)
+       VALUES (?, ?, ?, ?, 1)`,
+      [nombre, email, password_hash, rol]
+    );
+
+    return res.status(201).json({
+      ok:         true,
+      mensaje:    'Usuario creado correctamente.',
+      id_usuario: result.insertId,
+      nombre,
+      email,
+      rol,
+    });
+
+  } catch (err) {
+    console.error('[POST /usuarios]', err.message);
+    return res.status(500).json({ ok: false, mensaje: 'Error interno del servidor.' });
+  } finally {
+    conn.release();
+  }
+});
+
+// ─── PATCH /api/usuarios/:id ──────────────────────────────────────────────────
+// Modificar nombre, rol o estado activo
+router.patch('/:id', verifyToken, requireRol('directivo'), async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id)) return res.status(400).json({ ok: false, mensaje: 'ID inválido.' });
+
+  const { nombre, rol, activo } = req.body;
+
+  if (rol && !ROLES_VALIDOS.includes(rol)) {
+    return res.status(400).json({
+      ok:      false,
+      mensaje: `El rol debe ser: ${ROLES_VALIDOS.join(', ')}.`,
+    });
+  }
+
+  const conn = await db.getConnection();
+  try {
+    const [rows] = await conn.execute(
+      'SELECT id_usuario FROM usuarios WHERE id_usuario = ? LIMIT 1',
+      [id]
+    );
+    if (rows.length === 0)
+      return res.status(404).json({ ok: false, mensaje: 'Usuario no encontrado.' });
+
+    const campos = [];
+    const valores = [];
+
+    if (nombre !== undefined) { campos.push('nombre = ?');  valores.push(nombre); }
+    if (rol    !== undefined) { campos.push('rol = ?');     valores.push(rol);    }
+    if (activo !== undefined) { campos.push('activo = ?');  valores.push(activo ? 1 : 0); }
+
+    if (campos.length === 0) {
+      return res.status(400).json({ ok: false, mensaje: 'No hay campos para actualizar.' });
+    }
+
+    valores.push(id);
+    await conn.execute(`UPDATE usuarios SET ${campos.join(', ')} WHERE id_usuario = ?`, valores);
+
+    return res.status(200).json({ ok: true, mensaje: 'Usuario actualizado correctamente.' });
+
+  } catch (err) {
+    console.error('[PATCH /usuarios/:id]', err.message);
+    return res.status(500).json({ ok: false, mensaje: 'Error interno del servidor.' });
+  } finally {
+    conn.release();
+  }
+});
+
+// ─── DELETE /api/usuarios/:id ─────────────────────────────────────────────────
+// Baja lógica — no elimina físicamente
+router.delete('/:id', verifyToken, requireRol('directivo'), async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id)) return res.status(400).json({ ok: false, mensaje: 'ID inválido.' });
+
+  // No permitir que el directivo se elimine a sí mismo
+  if (id === req.usuario.id_usuario) {
+    return res.status(400).json({
+      ok:      false,
+      mensaje: 'No podés darte de baja a vos mismo.',
+    });
+  }
+
+  const conn = await db.getConnection();
+  try {
+    const [rows] = await conn.execute(
+      'SELECT id_usuario FROM usuarios WHERE id_usuario = ? LIMIT 1',
+      [id]
+    );
+    if (rows.length === 0)
+      return res.status(404).json({ ok: false, mensaje: 'Usuario no encontrado.' });
+
+    await conn.execute('UPDATE usuarios SET activo = 0 WHERE id_usuario = ?', [id]);
+
+    return res.status(200).json({ ok: true, mensaje: 'Usuario dado de baja correctamente.' });
+
+  } catch (err) {
+    console.error('[DELETE /usuarios/:id]', err.message);
+    return res.status(500).json({ ok: false, mensaje: 'Error interno del servidor.' });
+  } finally {
+    conn.release();
+  }
+});
+
+// ─── POST /api/usuarios/:id/reset-pin ────────────────────────────────────────
+// El directivo puede resetear el PIN de cualquier usuario
+router.post('/:id/reset-pin', verifyToken, requireRol('directivo'), async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id)) return res.status(400).json({ ok: false, mensaje: 'ID inválido.' });
+
+  const conn = await db.getConnection();
+  try {
+    const [rows] = await conn.execute(
+      'SELECT id_usuario FROM usuarios WHERE id_usuario = ? LIMIT 1',
+      [id]
+    );
+    if (rows.length === 0)
+      return res.status(404).json({ ok: false, mensaje: 'Usuario no encontrado.' });
+
+    await conn.execute('UPDATE usuarios SET pin_hash = NULL WHERE id_usuario = ?', [id]);
+
+    return res.status(200).json({
+      ok:      true,
+      mensaje: 'PIN reseteado. El usuario deberá configurar uno nuevo al ingresar.',
+    });
+
+  } catch (err) {
+    console.error('[POST /usuarios/:id/reset-pin]', err.message);
+    return res.status(500).json({ ok: false, mensaje: 'Error interno del servidor.' });
+  } finally {
+    conn.release();
+  }
+});
+
+// ─── PATCH /api/usuarios/:id/password ────────────────────────────────────────
+// El directivo puede cambiar la contraseña de un usuario
+router.patch('/:id/password', verifyToken, requireRol('directivo'), async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id)) return res.status(400).json({ ok: false, mensaje: 'ID inválido.' });
+
+  const { password } = req.body;
+  if (!password || password.length < 6) {
+    return res.status(400).json({
+      ok:      false,
+      mensaje: 'La contraseña debe tener al menos 6 caracteres.',
+    });
+  }
+
+  const conn = await db.getConnection();
+  try {
+    const [rows] = await conn.execute(
+      'SELECT id_usuario FROM usuarios WHERE id_usuario = ? LIMIT 1',
+      [id]
+    );
+    if (rows.length === 0)
+      return res.status(404).json({ ok: false, mensaje: 'Usuario no encontrado.' });
+
+    const password_hash = await bcrypt.hash(password, 10);
+    await conn.execute(
+      'UPDATE usuarios SET password_hash = ? WHERE id_usuario = ?',
+      [password_hash, id]
+    );
+
+    return res.status(200).json({ ok: true, mensaje: 'Contraseña actualizada correctamente.' });
+
+  } catch (err) {
+    console.error('[PATCH /usuarios/:id/password]', err.message);
+    return res.status(500).json({ ok: false, mensaje: 'Error interno del servidor.' });
+  } finally {
+    conn.release();
+  }
+});
+
+module.exports = router;
