@@ -29,8 +29,7 @@ export default function Dashboard() {
       .then(({ data }) => setActivo(data?.simulacro ?? null))
       .catch(() => undefined);
     api
-      .get('/api/reportes/sectores')
-      .then(({ data }) => setSectors(data?.sectores ?? []))
+api.get('/api/incidencias/sectores')      .then(({ data }) => setSectors(data?.sectores ?? []))
       .catch(() => undefined);
   }, []);
 

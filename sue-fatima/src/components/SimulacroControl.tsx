@@ -105,7 +105,7 @@ export default function SimulacroControl({ activo, isDirectivo, onChange, sector
         </label>
       )}
 
-{!mobile && <IncidentForm activo={activo} sectors={sectors} onSent={() => undefined} />}    </section>
+{!mobile && activo && <IncidentForm activo={activo} sectors={sectors} onSent={() => undefined} />}  </section>
   );
 }
 
@@ -135,7 +135,7 @@ export function IncidentForm({
   if (!activo || !type || !sector) return;
   setBusy(true);
   try {
-    await api.post('/api/reportes', {
+    await api.post('/api/incidencias', {
       id_simulacro: activo.id_simulacro,
       id_sector: Number(sector),
       estado_sector: 'en_proceso',
