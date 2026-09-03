@@ -11,6 +11,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.app.json"
   },
   "dependencies": {
+    "@capacitor/core": "^8.5.1",
     "axios": "^1.7.7",
     "cookie-parser": "^1.4.7",
     "lucide-react": "^0.446.0",
@@ -19,6 +20,7 @@
     "react-router-dom": "^6.28.0"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.5.1",
     "@eslint/js": "^9.9.1",
     "@types/react": "^18.3.5",
     "@types/react-dom": "^18.3.0",

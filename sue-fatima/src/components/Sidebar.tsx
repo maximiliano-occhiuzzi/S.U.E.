@@ -46,17 +46,16 @@ export default function Sidebar({ active, onNavigate, activo = null, isDirectivo
       </div>
 
       <nav className="side-nav">
-        {items.map(({ label, icon: Icon, value }) => (
-          <NavLink
-            key={value}
-            to={value === 'inicio' ? '/' : `/mobile#${value}`}
-            className={`side-link ${active === value ? 'active' : ''}`}
-            onClick={() => onNavigate?.(value)}
-          >
-            <Icon size={18} />
-            <span>{label}</span>
-          </NavLink>
-        ))}
+       {items.map(({ label, icon: Icon, value }) => (
+  <button
+    key={value}
+    className={`side-link ${active === value ? 'active' : ''}`}
+    onClick={() => onNavigate?.(value)}
+  >
+    <Icon size={18} />
+    <span>{label}</span>
+  </button>
+))}
       </nav>
 
       <div className="side-extra">
