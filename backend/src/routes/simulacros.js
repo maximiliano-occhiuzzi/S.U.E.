@@ -94,6 +94,65 @@ router.get('/historial', verifyToken, async (req, res) => {
 });
 
 // ─── GET /api/simulacros/:id ──────────────────────────────────────────────────
+// ─── Resumen de un simulacro (para el aviso de "evacuación exitosa") ──────────
+async function armarResumen(conn, id_simulacro, { verDocentes }) {
+  const [sims] = await conn.execute(
+    `SELECT id_simulacro, tipo, nombre, estado, fecha_inicio, fecha_fin FROM simulacros WHERE id_simulacro = ? LIMIT 1`,
+    [id_simulacro]
+  );
+  if (sims.length === 0) return null;
+  const s = sims[0];
+  const [incs] = await conn.execute(
+    `SELECT i.id_reporte, i.tipo_incidencia, COALESCE(t.nombre, i.tipo_incidencia) AS tipo_nombre,
+            i.gravedad, i.estado_sector, i.fecha_reporte,
+            sec.nombre AS sector, u.nombre AS docente
+     FROM incidencias i
+     LEFT JOIN tipos_incidencia t ON t.codigo = i.tipo_incidencia
+     LEFT JOIN sectores sec ON sec.id_sector = i.id_sector
+     LEFT JOIN usuarios u ON u.id_usuario = i.id_docente
+     WHERE i.id_simulacro = ? AND i.estado <> 'cancelada'
+     ORDER BY i.fecha_reporte ASC`,
+    [id_simulacro]
+  );
+  const cuenta = (e) => incs.filter(i => i.estado_sector === e).length;
+  return {
+    id_simulacro: s.id_simulacro,
+    tipo:         s.tipo,
+    nombre:       s.nombre,
+    estado:       s.estado,
+    fecha_inicio: s.fecha_inicio,
+    fecha_fin:    s.fecha_fin,
+    duracion:     calcularDuracion(s.fecha_inicio, s.fecha_fin),
+    total_incidencias: incs.length,
+    sectores_reportados: new Set(incs.map(i => i.sector)).size,
+    por_estado: { evacuado_ok: cuenta('evacuado_ok'), en_proceso: cuenta('en_proceso'), peligro: cuenta('peligro') },
+    incidencias: incs.map(i => ({
+      id_reporte: i.id_reporte, tipo_incidencia: i.tipo_incidencia, tipo_nombre: i.tipo_nombre,
+      gravedad: i.gravedad, estado_sector: i.estado_sector, fecha_reporte: i.fecha_reporte,
+      sector: i.sector,
+      // Los nombres de los docentes que reportaron solo los ve la dirección.
+      ...(verDocentes ? { docente: i.docente } : {}),
+    })),
+  };
+}
+
+// ─── GET /api/simulacros/:id/resumen ──────────────────────────────────────────
+router.get('/:id/resumen', verifyToken, async (req, res) => {
+  const id_simulacro = parseInt(req.params.id, 10);
+  if (isNaN(id_simulacro)) return res.status(400).json({ ok: false, mensaje: 'ID inválido.' });
+  const conn = await db.getConnection();
+  try {
+    const resumen = await armarResumen(conn, id_simulacro, { verDocentes: req.usuario.rol === 'directivo' });
+    if (!resumen) return res.status(404).json({ ok: false, mensaje: 'Simulacro no encontrado.' });
+    return res.json({ ok: true, resumen });
+  } catch (err) {
+    console.error('[GET /simulacros/:id/resumen]', err.message);
+    return res.status(500).json({ ok: false, mensaje: 'Error interno del servidor.' });
+  } finally {
+    conn.release();
+  }
+});
+
 router.get('/:id', verifyToken, async (req, res) => {
   const id = parseInt(req.params.id, 10);
   if (isNaN(id)) return res.status(400).json({ ok: false, mensaje: 'ID inválido.' });
@@ -272,7 +331,21 @@ router.put('/:id/finalizar', verifyToken, requireRol('directivo'), async (req, r
     mqttClient.publish('cmnd/drillmaster/POWER', 'OFF', { qos: 1 });
 
     // Avisar en vivo a todos los dispositivos conectados
-    realtime.emitir('simulacro', { evento: 'finalizado', id_simulacro });
+    realtime.emitir('simulacro', { evento: 'finalizado', id_simulacro, tipo: rows[0].tipo });
+
+    // Aviso push de cierre para todos (no bloquea la respuesta): "evacuación exitosa" + resumen corto.
+    armarResumen(db, id_simulacro, { verDocentes: false })
+      .then((r) => {
+        const incs = r ? r.total_incidencias : 0;
+        const detalle = incs === 0 ? 'No se reportaron incidencias.'
+          : `${incs} ${incs === 1 ? 'incidencia reportada' : 'incidencias reportadas'}.`;
+        return enviarPushATodos({
+          titulo: rows[0].tipo === 'emergencia' ? '✅ Emergencia finalizada' : '✅ Evacuación exitosa',
+          cuerpo: `Duración ${duracion}. ${detalle} Gracias por mantener la calma. Tocá para ver el detalle.`,
+          data:   { tipo: 'SIMULACRO_FINALIZADO', id_simulacro: String(id_simulacro) },
+        });
+      })
+      .catch(err => console.error('[Push] Error en finalizar simulacro:', err.message));
 
     return res.status(200).json({
       ok:           true,

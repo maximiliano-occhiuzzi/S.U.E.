@@ -1,0 +1,12 @@
+ICONO NUEVO DE LA APP (mas nitido) - carpeta "res" COMPLETA de Android
+
+1) Cerra Android Studio.
+2) Borra la carpeta:   sue-fatima\android\app\src\main\res
+3) Copia la carpeta "res" de este zip en:   sue-fatima\android\app\src\main\
+4) En la carpeta sue-fatima corre:
+      npm run build
+      npx cap sync android
+5) Android Studio > Build > Clean Project, y despues Build APK.
+6) En el celu desinstala la app vieja e instala la nueva.
+
+(icono-playstore-1024.png es el icono grande, por si algun dia subis la app a Play Store.)

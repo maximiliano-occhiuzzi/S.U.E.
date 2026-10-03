@@ -15,12 +15,14 @@ if (process.env.JWT_SECRET.length < 32)
 
 require('./config/db');
 require('./config/mqtt');
+require('./utils/migraciones').ejecutar();
 
 const authRouter        = require('./routes/auth');
 const simulacrosRouter  = require('./routes/simulacros');
 const incidenciasRouter = require('./routes/incidencias');
 const usuariosRouter    = require('./routes/usuarios');
 const realtimeRouter    = require('./routes/realtime');
+const catalogoRouter    = require('./routes/catalogo');
 
 const app  = express();
 const PORT = process.env.PORT || 3001;
@@ -61,6 +63,8 @@ app.use('/api/simulacros',  simulacrosRouter);
 app.use('/api/incidencias', incidenciasRouter);
 app.use('/api/usuarios',    usuariosRouter);
 app.use('/api/realtime',    realtimeRouter);
+app.use('/api/catalogo',    catalogoRouter);
+app.use('/api/perfil',      require('./routes/perfil'));
 
 // ─── Interfaz web ────────────────────────────────────────────────────────────
 // Si existe la web compilada (npm run build:web en sue-fatima), este mismo programa la

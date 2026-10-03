@@ -6,6 +6,7 @@ import Login from '@/pages/Login';
 import StatusOverlay from '@/components/StatusOverlay';
 import { usePushNotifications } from '@/hooks/usePushNotifications';
 import { useRealtime } from '@/hooks/useRealtime';
+import ResumenFinal from '@/components/ResumenFinal';
 
 // Lazy: solo se descargan cuando hacen falta (despues del login), asi la
 // pantalla de login aparece de inmediato sin esperar el bundle del Dashboard.
@@ -98,7 +99,13 @@ function Protected() {
     );
   }
 
-  return <Outlet />;
+  return (
+    <>
+      <Outlet />
+      {/* Aviso de cierre ("evacuación exitosa") para todos los usuarios con sesión y PIN desbloqueado */}
+      <ResumenFinal />
+    </>
+  );
 }
 
 function InicioSegunPlataforma() {

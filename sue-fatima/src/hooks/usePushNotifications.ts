@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import api from '@/services/api';
 import { useAuth } from '@/context/AuthContext';
 import { REFRESH_EVENT } from '@/hooks/useSimulacroActivo';
+import { agregarAviso, FINAL_EVENT } from '@/hooks/useAvisos';
 
 export function usePushNotifications() {
   const { usuario } = useAuth();
@@ -55,8 +56,15 @@ export function usePushNotifications() {
       PushNotifications.addListener('pushNotificationReceived', () => {
         window.dispatchEvent(new Event(REFRESH_EVENT));
       }),
-      PushNotifications.addListener('pushNotificationActionPerformed', () => {
+      PushNotifications.addListener('pushNotificationActionPerformed', (accion) => {
         window.dispatchEvent(new Event(REFRESH_EVENT));
+        // Tocó el aviso de "simulacro finalizado": mostrar el resumen de evacuación
+        const data = accion.notification?.data as Record<string, string> | undefined;
+        if (data?.tipo === 'SIMULACRO_FINALIZADO' && data.id_simulacro) {
+          const id = Number(data.id_simulacro);
+          agregarAviso({ id: `fin-${id}`, tipo: 'fin', id_simulacro: id, titulo: 'Evacuación exitosa', texto: 'El simulacro terminó. Tocá para ver el resumen.' });
+          window.dispatchEvent(new CustomEvent(FINAL_EVENT, { detail: { id_simulacro: id } }));
+        }
         // El usuario tocó la notificación -> llevarlo a Estado en vivo
         navigate('/');
       }),

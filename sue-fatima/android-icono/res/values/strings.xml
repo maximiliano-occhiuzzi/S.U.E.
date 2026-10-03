@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">S.U.E. Fátima</string>
+    <string name="title_activity_main">S.U.E. Fátima</string>
+    <string name="package_name">com.suefatima.app</string>
+    <string name="custom_url_scheme">com.suefatima.app</string>
+</resources>

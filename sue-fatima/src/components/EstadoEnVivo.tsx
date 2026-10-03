@@ -3,6 +3,7 @@ import { useIncidencias } from '@/hooks/useIncidencias';
 import { SkeletonCards } from './Skeleton';
 import { Clock3 } from 'lucide-react';
 import { IncidentIcon, PanelHeading } from './SimulacroControl';
+import { useCatalogo } from '@/hooks/useCatalogo';
 import type { ActiveSimulacro } from './SimulacroControl';
 
 export type Report = {
@@ -14,14 +15,6 @@ export type Report = {
   fecha_reporte:   string;
   docente?:        string | { nombre: string };
   sector?:         string | { nombre: string };
-};
-
-const labels: Record<string, { label: string; color: string; icon: string }> = {
-  incendio:          { label: 'Incendio',         color: 'red',    icon: 'flame'   },
-  humo:              { label: 'Humo',             color: 'amber',  icon: 'cloud'   },
-  acceso_bloqueado:  { label: 'Acceso bloqueado', color: 'orange', icon: 'barrier' },
-  persona_lesionada: { label: 'Lesionado',        color: 'blue',   icon: 'person'  },
-  otro:              { label: 'Otro',             color: 'green',  icon: 'dots'    },
 };
 
 const GRAVEDAD_COLOR: Record<string, string> = {
@@ -50,8 +43,9 @@ export default function EstadoEnVivo({
   // Incidencias del simulacro activo (se actualizan en vivo) + estado de primera carga.
   const { reports, cargando } = useIncidencias(activo, refreshKey);
   const [filter,  setFilter]  = useState('todas');
+  const { tipos, meta: metaTipo } = useCatalogo();
 
-  const filters = ['todas', ...Object.keys(labels)];
+  const filters = ['todas', ...tipos.map(t => t.codigo)];
   const shown   = filter === 'todas' ? reports : reports.filter(r => r.tipo_incidencia === filter);
 
   return (
@@ -61,7 +55,7 @@ export default function EstadoEnVivo({
       <div className="filter-row">
         {filters.map(item => (
           <button key={item} className={filter === item ? 'active' : ''} onClick={() => setFilter(item)}>
-            {item === 'todas' ? 'Todas' : <IncidentIcon type={labels[item].icon} />}
+            {item === 'todas' ? 'Todas' : <IncidentIcon type={metaTipo(item).icon} />}
           </button>
         ))}
       </div>
@@ -76,7 +70,7 @@ export default function EstadoEnVivo({
             <span>{activo ? 'Las nuevas incidencias aparecerán aquí.' : 'Iniciá un simulacro para ver el estado en vivo.'}</span>
           </div>
         ) : shown.map(report => {
-          const meta = labels[report.tipo_incidencia] ?? labels.otro;
+          const meta = metaTipo(report.tipo_incidencia);
           return (
             <div className={`report-card ${meta.color}`} key={report.id_reporte}>
               <div className="report-icon">

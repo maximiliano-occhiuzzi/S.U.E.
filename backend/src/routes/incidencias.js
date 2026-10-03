@@ -10,16 +10,8 @@ const TOPIC_INCIDENCIAS = 'sue/incidencias';
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
 
-const TIPOS_VALIDOS   = ['incendio', 'humo', 'acceso_bloqueado', 'persona_lesionada', 'otro'];
+// Los tipos de incidencia ya no son fijos: se administran desde la app (tabla tipos_incidencia).
 const ESTADOS_VALIDOS = ['evacuado_ok', 'peligro', 'en_proceso'];
-
-const GRAVEDAD_POR_TIPO = {
-  incendio:          'critica',
-  persona_lesionada: 'critica',
-  humo:              'moderada',
-  acceso_bloqueado:  'moderada',
-  otro:              'informativa',
-};
 
 // ─── GET /api/incidencias/sectores ────────────────────────────────────────────
 router.get('/sectores', verifyToken, async (req, res) => {
@@ -90,13 +82,6 @@ router.post('/', verifyToken, async (req, res) => {
     });
   }
 
-  if (!TIPOS_VALIDOS.includes(tipo_incidencia)) {
-    return res.status(400).json({
-      ok:      false,
-      mensaje: `tipo_incidencia debe ser: ${TIPOS_VALIDOS.join(', ')}.`,
-    });
-  }
-
   if (!ESTADOS_VALIDOS.includes(estado_sector)) {
     return res.status(400).json({
       ok:      false,
@@ -104,11 +89,20 @@ router.post('/', verifyToken, async (req, res) => {
     });
   }
 
-  // El backend determina la gravedad — no se confía en el frontend
-  const gravedad = GRAVEDAD_POR_TIPO[tipo_incidencia] ?? 'informativa';
-
   const conn = await db.getConnection();
   try {
+    // El tipo tiene que existir y estar activo. La gravedad la determina el servidor
+    // (según el tipo cargado en la base) — no se confía en el frontend.
+    const [tipoRows] = await conn.execute(
+      `SELECT gravedad, nombre FROM tipos_incidencia WHERE codigo = ? AND activo = 1 LIMIT 1`,
+      [String(tipo_incidencia)]
+    );
+    if (tipoRows.length === 0) {
+      return res.status(400).json({ ok: false, mensaje: 'Ese tipo de incidencia no existe o está desactivado.' });
+    }
+    const gravedad    = tipoRows[0].gravedad;
+    const tipo_nombre = tipoRows[0].nombre;
+
     // Verificar que el simulacro existe y está activo
     const [simRows] = await conn.execute(
       `SELECT id_simulacro FROM simulacros
@@ -169,7 +163,11 @@ router.post('/', verifyToken, async (req, res) => {
     });
 
     // Avisar en vivo: el dashboard/estado de los demás se actualiza al instante
-    realtime.emitir('incidencia', { id_reporte, id_simulacro });
+    realtime.emitir('incidencia', {
+      id_reporte, id_simulacro, id_docente,
+      tipo: tipo_incidencia, tipo_nombre, gravedad,
+      sector: nombre_sector, docente: req.usuario.nombre,
+    });
 
     return res.status(201).json({
       ok:           true,

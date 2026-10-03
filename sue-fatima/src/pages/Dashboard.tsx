@@ -7,11 +7,15 @@ import SimulacroControl, { type ActiveSimulacro } from '@/components/SimulacroCo
 import { useSimulacroActivo } from '@/hooks/useSimulacroActivo';
 import { useIncidencias } from '@/hooks/useIncidencias';
 import { useHistorial } from '@/hooks/useHistorial';
+import { useCatalogo } from '@/hooks/useCatalogo';
 import EstadoEnVivo from '@/components/EstadoEnVivo';
 import AvisoEvacuacion from '@/components/AvisoEvacuacion';
 import DashboardMetrics from '@/components/DashboardMetrics';
 import Historial from '@/components/Historial';
 import Usuarios from '@/components/Usuarios';
+import Catalogo from '@/components/Catalogo';
+import Perfil from '@/components/Perfil';
+import { useFoto } from '@/hooks/useFoto';
 
 const SECTIONS: Record<string, string> = {
   inicio:    'Inicio / Operación',
@@ -23,10 +27,12 @@ const SECTIONS: Record<string, string> = {
 export default function Dashboard() {
   const { usuario } = useAuth();
   const [active,     setActive]     = useState('inicio');
+  useFoto(usuario?.id_usuario);
   // Estado del simulacro sincronizado con el servidor (canal en vivo + respaldo por polling),
   // para que lo que haga otro usuario/dispositivo se vea acá sin recargar.
   const { activo, setActivo } = useSimulacroActivo();
-  const [sectors,    setSectors]    = useState<{ id_sector: number; nombre: string }[]>([]);
+  // Sectores y tipos de incidencia: los administra la dirección y se actualizan solos.
+  const { sectores: sectors } = useCatalogo();
   const [menu,       setMenu]       = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
 
@@ -36,14 +42,7 @@ export default function Dashboard() {
   const { items: history, cargando: cargandoHistorial } = useHistorial(active === 'historial');
 
   const isDirectivo = usuario?.rol === 'directivo';
-  const sections = isDirectivo ? { ...SECTIONS, usuarios: 'Usuarios' } : SECTIONS;
-
-  // Los sectores casi no cambian: se piden una sola vez
-  useEffect(() => {
-    api.get('/api/incidencias/sectores')
-      .then(({ data }) => setSectors(data?.sectores ?? []))
-      .catch(() => undefined);
-  }, []);
+  const sections = isDirectivo ? { ...SECTIONS, usuarios: 'Usuarios', catalogo: 'Sectores e incidentes' } : SECTIONS;
 
   const goTo = (key: string) => { setActive(key); setMenu(false); };
 
@@ -75,7 +74,7 @@ export default function Dashboard() {
         onFinalize={finalizarSimulacro}
       />
       <main className="main-area">
-        <Topbar activo={activo} />
+        <Topbar activo={activo} onProfile={() => setActive('perfil')} />
 
         <button className="mobile-menu" onClick={() => setMenu(o => !o)}>
           <Menu size={20} />
@@ -119,6 +118,14 @@ export default function Dashboard() {
 
           {active === 'usuarios' && isDirectivo && (
             <Usuarios />
+          )}
+
+          {active === 'perfil' && (
+            <div className="perfil-desktop"><Perfil /></div>
+          )}
+
+          {active === 'catalogo' && isDirectivo && (
+            <Catalogo />
           )}
         </div>
       </main>

@@ -59,7 +59,7 @@ router.post('/login', limiteLoginIp, limiteLoginCuenta, async (req, res) => {
   }
 
   try {
-    const [rows] = await db.execute('SELECT * FROM usuarios WHERE email = ? AND activo = 1 LIMIT 1', [email]);
+    const [rows] = await db.execute('SELECT id_usuario, nombre, rol, password_hash, pin_hash FROM usuarios WHERE email = ? AND activo = 1 LIMIT 1', [email]);
     if (rows.length === 0)
       return res.status(401).json({ ok: false, mensaje: 'Credenciales incorrectas.' });
     const usuario = rows[0];
@@ -71,7 +71,7 @@ router.post('/login', limiteLoginIp, limiteLoginCuenta, async (req, res) => {
     res.cookie(REFRESH_COOKIE_NAME, refreshToken, cookieOptions);
     // refreshToken también va en el body: la app del celular (origen suefatima.local -> backend por IP)
     // es cross-site y Android descarta la cookie; la app lo guarda en el dispositivo y lo manda en /refresh.
-    return res.status(200).json({ ok: true, token, refreshToken, nombre: usuario.nombre, rol: usuario.rol, tiene_pin: usuario.pin_hash !== null });
+    return res.status(200).json({ ok: true, token, refreshToken, id_usuario: usuario.id_usuario, nombre: usuario.nombre, rol: usuario.rol, tiene_pin: usuario.pin_hash !== null });
   } catch (err) {
     console.error('[POST /login]', err.message);
     return res.status(500).json({ ok: false, mensaje: 'Error interno del servidor.' });
@@ -84,7 +84,7 @@ router.post('/refresh', async (req, res) => {
     return res.status(401).json({ ok: false, mensaje: 'No hay sesion activa.' });
   try {
     const payload = jwt.verify(refreshToken, REFRESH_SECRET);
-    const [rows] = await db.execute('SELECT * FROM usuarios WHERE id_usuario = ? AND activo = 1 LIMIT 1', [payload.id_usuario]);
+    const [rows] = await db.execute('SELECT id_usuario, nombre, rol, pin_hash FROM usuarios WHERE id_usuario = ? AND activo = 1 LIMIT 1', [payload.id_usuario]);
     if (rows.length === 0) {
       res.clearCookie(REFRESH_COOKIE_NAME, { path: '/api/auth' });
       return res.status(401).json({ ok: false, mensaje: 'Usuario no encontrado o inactivo.' });
@@ -93,7 +93,7 @@ router.post('/refresh', async (req, res) => {
     const token = firmarAccessToken(usuario);
     const nuevoRefreshToken = firmarRefreshToken(usuario);
     res.cookie(REFRESH_COOKIE_NAME, nuevoRefreshToken, cookieOptions);
-    return res.status(200).json({ ok: true, token, refreshToken: nuevoRefreshToken, nombre: usuario.nombre, rol: usuario.rol, tiene_pin: usuario.pin_hash !== null });
+    return res.status(200).json({ ok: true, token, refreshToken: nuevoRefreshToken, id_usuario: usuario.id_usuario, nombre: usuario.nombre, rol: usuario.rol, tiene_pin: usuario.pin_hash !== null });
   } catch (err) {
     res.clearCookie(REFRESH_COOKIE_NAME, { path: '/api/auth' });
     return res.status(401).json({ ok: false, mensaje: 'Sesion invalida o expirada.' });

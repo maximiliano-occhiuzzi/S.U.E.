@@ -2,6 +2,7 @@ import { ChevronDown, ClipboardList, Eye } from 'lucide-react';
 import { useState } from 'react';
 import api from '@/services/api';
 import { SkeletonRows } from './Skeleton';
+import { useCatalogo } from '@/hooks/useCatalogo';
 
 export type Simulacro = {
   id_simulacro:      number;
@@ -39,6 +40,7 @@ const ESTADO_LABEL: Record<string, string> = {
 };
 
 export default function Historial({ items, loading: cargandoLista = false }: { items: Simulacro[]; loading?: boolean }) {
+  const { meta: metaTipo } = useCatalogo();
   const [open,    setOpen]    = useState<number | null>(null);
   const [incids,  setIncids]  = useState<Record<number, Incidencia[]>>({});
   const [loading, setLoading] = useState<number | null>(null);
@@ -136,7 +138,7 @@ export default function Historial({ items, loading: cargandoLista = false }: { i
                             {(incids[item.id_simulacro] ?? []).map(inc => (
                               <tr key={inc.id_reporte} style={{ borderTop: '1px solid #e2e8f0' }}>
                                 <td style={{ padding: '6px 8px', textTransform: 'capitalize' }}>
-                                  {inc.tipo_incidencia.replace(/_/g, ' ')}
+                                  {metaTipo(inc.tipo_incidencia).label}
                                 </td>
                                 <td style={{ padding: '6px 8px' }}>
                                   <span style={{ color: GRAVEDAD_COLOR[inc.gravedad] ?? '#64748b', fontWeight: 600, fontSize: 11 }}>

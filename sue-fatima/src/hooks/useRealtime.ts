@@ -2,6 +2,11 @@ import { useEffect, useSyncExternalStore } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { getAccessToken, renovarSesion } from '@/services/api';
 import { REFRESH_EVENT, SIMULACRO_EVENT } from '@/hooks/useSimulacroActivo';
+import { CATALOGO_EVENT } from '@/hooks/useCatalogo';
+import { agregarAviso, FINAL_EVENT } from '@/hooks/useAvisos';
+
+// Quién soy (lo usa procesarBloque para decidir qué avisos corresponden)
+let yo: { id?: number; rol?: string } = {};
 
 // ─── Presencia (quién está conectado) ────────────────────────────────────────
 export type DocenteConectado = { id_usuario: number; nombre: string; desde: string };
@@ -55,10 +60,40 @@ function procesarBloque(bloque: string) {
       ? (p.docentes_lista as DocenteConectado[]).filter((d) => d && typeof d.nombre === 'string')
       : [];
     setPresencia({ docentes: Number(p.docentes) || 0, directivos: Number(p.directivos) || 0, lista });
+  } else if (evento === 'catalogo') {
+    // Un directivo agregó/cambió sectores o tipos de incidencia.
+    window.dispatchEvent(new Event(CATALOGO_EVENT));
   } else if (evento === 'simulacro' || evento === 'incidencia') {
     // Alguien inició/finalizó un simulacro o reportó algo: refrescar ya.
     window.dispatchEvent(new Event(REFRESH_EVENT));
     if (evento === 'simulacro') window.dispatchEvent(new Event(SIMULACRO_EVENT));
+
+    const p = payload as Record<string, unknown>;
+    if (evento === 'simulacro' && typeof p.id_simulacro === 'number') {
+      const emergencia = p.tipo === 'emergencia';
+      if (p.evento === 'iniciado') {
+        agregarAviso({
+          id: `ini-${p.id_simulacro}`, tipo: 'inicio', id_simulacro: p.id_simulacro,
+          titulo: emergencia ? 'Emergencia activada' : 'Simulacro iniciado',
+          texto: 'Dirigite al punto de encuentro con cuidado y siguiendo las indicaciones.',
+        });
+      } else if (p.evento === 'finalizado') {
+        agregarAviso({
+          id: `fin-${p.id_simulacro}`, tipo: 'fin', id_simulacro: p.id_simulacro,
+          titulo: emergencia ? 'Emergencia finalizada' : 'Evacuación exitosa',
+          texto: 'El simulacro terminó. Tocá para ver el resumen.',
+        });
+        window.dispatchEvent(new CustomEvent(FINAL_EVENT, { detail: { id_simulacro: p.id_simulacro } }));
+      }
+    }
+    // Nuevas incidencias: las ve la dirección (menos las que reportó ella misma).
+    if (evento === 'incidencia' && yo.rol === 'directivo' && typeof p.id_reporte === 'number' && p.id_docente !== yo.id) {
+      agregarAviso({
+        id: `inc-${p.id_reporte}`, tipo: 'incidencia',
+        titulo: `Nueva incidencia: ${String(p.tipo_nombre ?? 'sin tipo')}`,
+        texto: `${String(p.sector ?? 'Sector')} · reportó ${String(p.docente ?? 'un docente')}`,
+      });
+    }
   }
 }
 
@@ -73,6 +108,7 @@ export function useRealtime() {
 
   useEffect(() => {
     if (!usuario) return;
+    yo = { id: usuario.id_usuario, rol: usuario.rol };
 
     let cancelado = false;
     let ctrl: AbortController | null = null;
@@ -104,6 +140,7 @@ export function useRealtime() {
 
         // Recién conectados: resincronizar por si nos perdimos algo mientras estuvimos desconectados.
         window.dispatchEvent(new Event(REFRESH_EVENT));
+        window.dispatchEvent(new Event(CATALOGO_EVENT));
 
         const lector = res.body.getReader();
         const decoder = new TextDecoder();

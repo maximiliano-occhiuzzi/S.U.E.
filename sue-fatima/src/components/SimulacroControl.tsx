@@ -4,17 +4,25 @@ import {
   ChevronDown,
   CircleStop,
   Cloud,
+  Droplets,
   Flame,
+  FlaskConical,
+  HeartPulse,
+  Lock,
   MoreHorizontal,
   Play,
   Send,
   ShieldAlert,
+  TriangleAlert,
   UserRound,
+  Wind,
+  Zap,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import api from '@/services/api';
 import { ahoraServidor } from '@/services/clock';
 import { REFRESH_EVENT } from '@/hooks/useSimulacroActivo';
+import { useCatalogo } from '@/hooks/useCatalogo';
 
 export type ActiveSimulacro = { id_simulacro: number; fecha_inicio: string; observaciones?: string } | null;
 
@@ -132,14 +140,6 @@ export default function SimulacroControl({ activo, isDirectivo, onChange, sector
   );
 }
 
-const INCIDENT_TYPES = [
-  { value: 'incendio', label: 'Incendio', icon: 'flame', color: 'red' },
-  { value: 'humo', label: 'Humo', icon: 'cloud', color: 'amber' },
-  { value: 'acceso_bloqueado', label: 'Acceso bloqueado', icon: 'barrier', color: 'orange' },
-  { value: 'persona_lesionada', label: 'Lesionado', icon: 'person', color: 'blue' },
-  { value: 'otro', label: 'Otro', icon: 'dots', color: 'green' },
-] as const;
-
 export function IncidentForm({
   sectors,
   activo,
@@ -149,6 +149,8 @@ export function IncidentForm({
   activo: ActiveSimulacro;
   onSent: () => void;
 }) {
+  // Los tipos de incidencia los administra la dirección: llegan del servidor y se actualizan solos.
+  const { tipos } = useCatalogo();
   const [type, setType] = useState('');
   const [sector, setSector] = useState('');
   const [sent, setSent] = useState(false);
@@ -179,14 +181,14 @@ export function IncidentForm({
       <h3>¿Qué sucede?</h3>
 
       <div className="incident-buttons">
-        {INCIDENT_TYPES.map((item) => (
+        {tipos.map((item) => (
           <button
-            key={item.value}
-            className={`incident-button ${item.color} ${type === item.value ? 'selected' : ''}`}
-            onClick={() => setType(item.value)}
+            key={item.codigo}
+            className={`incident-button ${item.color} ${type === item.codigo ? 'selected' : ''}`}
+            onClick={() => setType(item.codigo)}
           >
-            <IncidentIcon type={item.icon} />
-            <span>{item.label}</span>
+            <IncidentIcon type={item.icono} />
+            <span>{item.nombre}</span>
           </button>
         ))}
       </div>
@@ -226,6 +228,13 @@ export function IncidentIcon({ type }: { type: string }) {
   if (type === 'cloud') return <Cloud {...props} />;
   if (type === 'barrier') return <ShieldAlert {...props} />;
   if (type === 'person') return <UserRound {...props} />;
+  if (type === 'zap') return <Zap {...props} />;
+  if (type === 'droplet') return <Droplets {...props} />;
+  if (type === 'wind') return <Wind {...props} />;
+  if (type === 'alert') return <TriangleAlert {...props} />;
+  if (type === 'heart') return <HeartPulse {...props} />;
+  if (type === 'lock') return <Lock {...props} />;
+  if (type === 'flask') return <FlaskConical {...props} />;
   return <MoreHorizontal {...props} />;
 }
 

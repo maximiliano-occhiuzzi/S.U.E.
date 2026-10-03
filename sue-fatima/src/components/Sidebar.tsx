@@ -1,7 +1,9 @@
-import { Activity, BarChart3, Bell, ChevronDown, CircleHelp, CircleStop, ClipboardList, House, LogOut, Settings, ShieldCheck, UserRound, Users, Wifi } from 'lucide-react';
+import Avatar from '@/components/Avatar';
+import { Activity, BarChart3, ChevronDown, CircleHelp, CircleStop, ClipboardList, House, ListPlus, LogOut, Settings, ShieldCheck, Users, Wifi } from 'lucide-react';
 import { NavLink } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import { type ActiveSimulacro, useElapsed } from '@/components/SimulacroControl';
+import CampanaAvisos from '@/components/CampanaAvisos';
 
 type Props = {
   active: string;
@@ -65,6 +67,15 @@ export default function Sidebar({ active, onNavigate, activo = null, isDirectivo
            <span>Usuarios</span>
          </button>
        )}
+       {isDirectivo && (
+         <button
+           className={`side-link ${active === 'catalogo' ? 'active' : ''}`}
+           onClick={() => onNavigate?.('catalogo')}
+         >
+           <ListPlus size={18} />
+           <span>Sectores e incidentes</span>
+         </button>
+       )}
       </nav>
 
       <div className="side-extra">
@@ -107,7 +118,7 @@ export default function Sidebar({ active, onNavigate, activo = null, isDirectivo
   );
 }
 
-export function Topbar({ activo = null }: { activo?: ActiveSimulacro }) {
+export function Topbar({ activo = null, onProfile }: { activo?: ActiveSimulacro; onProfile?: () => void }) {
   const { usuario } = useAuth();
   const elapsed = useElapsed(activo?.fecha_inicio);
 
@@ -129,14 +140,11 @@ export function Topbar({ activo = null }: { activo?: ActiveSimulacro }) {
       </div>
 
       <div className="top-actions">
-        <button className="icon-button">
-          <Bell size={19} />
-          <b>3</b>
-        </button>
-        <div className="profile">
-          <div className="avatar">
-            <UserRound size={18} />
-          </div>
+        {/* Campanita: historial de avisos con contador de no leídos */}
+        <CampanaAvisos className="icon-button" />
+        <div className="profile" role="button" tabIndex={0} style={{ cursor: 'pointer' }} onClick={onProfile}
+             onKeyDown={(e) => { if (e.key === 'Enter') onProfile?.(); }}>
+          <Avatar nombre={usuario?.nombre} size={34} />
           <span>
             <strong>{usuario?.nombre ?? 'Director'}</strong>
             <small>Rol: {usuario?.rol ?? 'Coordinador'}</small>

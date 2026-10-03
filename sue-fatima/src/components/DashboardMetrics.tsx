@@ -7,6 +7,7 @@ import { Skeleton } from './Skeleton';
 import { useAuth } from '@/context/AuthContext';
 import { usePresencia } from '@/hooks/useRealtime';
 import { ahoraServidor } from '@/services/clock';
+import { useCatalogo } from '@/hooks/useCatalogo';
 
 type Props = {
   reports: Report[];
@@ -31,10 +32,12 @@ export default function DashboardMetrics({ reports, sectorCount, connectedTeache
   // Docentes conectados ahora mismo (se actualiza en vivo; connectedTeachers fuerza un valor si se pasa).
   const { docentes } = usePresencia();
   const [verDocentes, setVerDocentes] = useState(false);
+  const { meta: metaTipo } = useCatalogo();
   // Solo los directivos pueden ver QUIÉNES están conectados (el servidor solo les manda la lista a ellos).
   const puedeVerLista = usuario?.rol === 'directivo';
 
-  const critical = reports.filter(r => ['incendio', 'persona_lesionada'].includes(r.tipo_incidencia)).length;
+  // Crítica = gravedad "critica" (la define el tipo de incidencia en el catálogo)
+  const critical = reports.filter(r => (r.gravedad ?? metaTipo(r.tipo_incidencia).gravedad) === 'critica').length;
   const sectors  = new Set(reports.map(r => typeof r.sector === 'string' ? r.sector : r.sector?.nombre)).size;
   const latest   = reports[0];
 
@@ -104,7 +107,7 @@ export default function DashboardMetrics({ reports, sectorCount, connectedTeache
             </>
           ) : latest ? (
             <>
-              <strong>{latest.tipo_incidencia.replace(/_/g, ' ')}</strong>
+              <strong>{metaTipo(latest.tipo_incidencia).label}</strong>
               <small>{typeof latest.sector === 'string' ? latest.sector : (latest.sector?.nombre ?? 'Sin sector')}</small>
             </>
           ) : (

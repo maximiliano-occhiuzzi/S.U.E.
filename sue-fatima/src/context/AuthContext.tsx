@@ -1,8 +1,9 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { olvidarFoto } from '@/hooks/useFoto';
 import api, { renovarSesion, setAccessToken, setRefreshToken } from '@/services/api';
 
 export type Role = 'directivo' | 'docente';
-export type Usuario = { nombre: string; rol: Role; tiene_pin?: boolean };
+export type Usuario = { id_usuario?: number; nombre: string; rol: Role; tiene_pin?: boolean };
 type LogoutPhase = 'idle' | 'loading' | 'done';
 type AuthContextValue = {
   usuario: Usuario | null;
@@ -23,7 +24,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Recupera la sesión al abrir la app (cookie en la PC, token guardado en el celu)
     renovarSesion().then((data) => {
       if (data?.token && data?.nombre && data?.rol) {
-        setUsuario({ nombre: data.nombre, rol: data.rol, tiene_pin: data.tiene_pin });
+        setUsuario({ id_usuario: data.id_usuario, nombre: data.nombre, rol: data.rol, tiene_pin: data.tiene_pin });
       }
     }).catch(() => undefined).finally(() => setLoading(false));
   }, []);
@@ -37,7 +38,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!data?.ok || !data.token || !data.nombre || !data.rol) throw new Error('No se pudo iniciar sesion');
       setAccessToken(data.token);
       setRefreshToken(data.refreshToken ?? null);
-      setUsuario({ nombre: data.nombre, rol: data.rol, tiene_pin: data.tiene_pin });
+      setUsuario({ id_usuario: data.id_usuario, nombre: data.nombre, rol: data.rol, tiene_pin: data.tiene_pin });
     },
     async logout() {
       setLogoutPhase('loading');
@@ -49,6 +50,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       setLogoutPhase('done');
       await new Promise(resolve => setTimeout(resolve, 800));
+      olvidarFoto();
       setUsuario(null);
       setLogoutPhase('idle');
     },

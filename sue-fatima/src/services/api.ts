@@ -41,6 +41,7 @@ export const setRefreshToken = (token: string | null) => {
 export type DatosSesion = {
   token: string;
   refreshToken?: string;
+  id_usuario?: number;
   nombre: string;
   rol: 'directivo' | 'docente';
   tiene_pin?: boolean;
