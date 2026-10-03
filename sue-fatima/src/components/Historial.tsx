@@ -1,6 +1,7 @@
 import { ChevronDown, ClipboardList, Eye } from 'lucide-react';
 import { useState } from 'react';
 import api from '@/services/api';
+import { SkeletonRows } from './Skeleton';
 
 export type Simulacro = {
   id_simulacro:      number;
@@ -37,7 +38,7 @@ const ESTADO_LABEL: Record<string, string> = {
   peligro:      'Peligro',
 };
 
-export default function Historial({ items }: { items: Simulacro[] }) {
+export default function Historial({ items, loading: cargandoLista = false }: { items: Simulacro[]; loading?: boolean }) {
   const [open,    setOpen]    = useState<number | null>(null);
   const [incids,  setIncids]  = useState<Record<number, Incidencia[]>>({});
   const [loading, setLoading] = useState<number | null>(null);
@@ -80,7 +81,9 @@ export default function Historial({ items }: { items: Simulacro[] }) {
             </tr>
           </thead>
           <tbody>
-            {items.length === 0 ? (
+            {cargandoLista ? (
+              <SkeletonRows rows={5} cols={8} />
+            ) : items.length === 0 ? (
               <tr>
                 <td colSpan={8} className="table-empty">
                   <ClipboardList size={22} />

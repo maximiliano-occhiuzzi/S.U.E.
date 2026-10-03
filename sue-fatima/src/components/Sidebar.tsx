@@ -56,13 +56,18 @@ export default function Sidebar({ active, onNavigate, activo = null, isDirectivo
     <span>{label}</span>
   </button>
 ))}
+       {isDirectivo && (
+         <button
+           className={`side-link ${active === 'usuarios' ? 'active' : ''}`}
+           onClick={() => onNavigate?.('usuarios')}
+         >
+           <Users size={18} />
+           <span>Usuarios</span>
+         </button>
+       )}
       </nav>
 
       <div className="side-extra">
-        <button className="side-link">
-          <Users size={18} />
-          <span>Usuarios</span>
-        </button>
         <button className="side-link">
           <Settings size={18} />
           <span>Configuración</span>

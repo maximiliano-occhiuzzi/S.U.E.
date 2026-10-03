@@ -4,10 +4,14 @@ import api from '@/services/api';
 import { useAuth } from '@/context/AuthContext';
 import Sidebar, { Topbar } from '@/components/Sidebar';
 import SimulacroControl, { type ActiveSimulacro } from '@/components/SimulacroControl';
+import { useSimulacroActivo } from '@/hooks/useSimulacroActivo';
+import { useIncidencias } from '@/hooks/useIncidencias';
+import { useHistorial } from '@/hooks/useHistorial';
 import EstadoEnVivo from '@/components/EstadoEnVivo';
+import AvisoEvacuacion from '@/components/AvisoEvacuacion';
 import DashboardMetrics from '@/components/DashboardMetrics';
-import Historial, { type Simulacro } from '@/components/Historial';
-import type { Report } from '@/components/EstadoEnVivo';
+import Historial from '@/components/Historial';
+import Usuarios from '@/components/Usuarios';
 
 const SECTIONS: Record<string, string> = {
   inicio:    'Inicio / Operación',
@@ -19,54 +23,41 @@ const SECTIONS: Record<string, string> = {
 export default function Dashboard() {
   const { usuario } = useAuth();
   const [active,     setActive]     = useState('inicio');
-  const [activo,     setActivo]     = useState<ActiveSimulacro>(null);
+  // Estado del simulacro sincronizado con el servidor (canal en vivo + respaldo por polling),
+  // para que lo que haga otro usuario/dispositivo se vea acá sin recargar.
+  const { activo, setActivo } = useSimulacroActivo();
   const [sectors,    setSectors]    = useState<{ id_sector: number; nombre: string }[]>([]);
-  const [reports,    setReports]    = useState<Report[]>([]);
-  const [history,    setHistory]    = useState<Simulacro[]>([]);
   const [menu,       setMenu]       = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
 
+  // Incidencias del simulacro activo y el historial: se mantienen al día solos
+  // y avisan cuándo están cargando por primera vez (para mostrar el efecto de carga).
+  const { reports, cargando: cargandoIncidencias } = useIncidencias(activo, refreshKey);
+  const { items: history, cargando: cargandoHistorial } = useHistorial(active === 'historial');
+
   const isDirectivo = usuario?.rol === 'directivo';
+  const sections = isDirectivo ? { ...SECTIONS, usuarios: 'Usuarios' } : SECTIONS;
 
-  // Cargar simulacro activo y sectores al montar
+  // Los sectores casi no cambian: se piden una sola vez
   useEffect(() => {
-    api.get('/api/simulacros/activo')
-      .then(({ data }) => setActivo(data?.simulacro ?? null))
-      .catch(() => undefined);
-
     api.get('/api/incidencias/sectores')
       .then(({ data }) => setSectors(data?.sectores ?? []))
       .catch(() => undefined);
-
-    api.get('/api/simulacros/historial')
-      .then(({ data }) => setHistory(data?.simulacros ?? []))
-      .catch(() => undefined);
   }, []);
-
-  // Cargar incidencias cuando hay simulacro activo
-  useEffect(() => {
-    if (!activo) { setReports([]); return; }
-
-    const load = () =>
-      api.get(`/api/incidencias/${activo.id_simulacro}`)
-        .then(({ data }) => setReports(data?.incidencias ?? []))
-        .catch(() => undefined);
-
-    load();
-    const timer = window.setInterval(load, 10000);
-    return () => window.clearInterval(timer);
-  }, [activo, refreshKey]);
 
   const goTo = (key: string) => { setActive(key); setMenu(false); };
 
   const finalizarSimulacro = async () => {
     if (!activo) return;
-    await api.put(`/api/simulacros/${activo.id_simulacro}/finalizar`);
+    try {
+      await api.put(`/api/simulacros/${activo.id_simulacro}/finalizar`);
+    } catch (err: any) {
+      // Si otro usuario ya lo finalizó (404/409), igual limpiamos el estado local.
+      const status = err?.response?.status;
+      if (status !== 404 && status !== 409) throw err;
+    }
+    // El historial se actualiza solo (evento en vivo / al abrir la pestaña).
     setActivo(null);
-    setReports([]);
-    api.get('/api/simulacros/historial')
-      .then(({ data }) => setHistory(data?.simulacros ?? []))
-      .catch(() => undefined);
   };
 
   const handleSimulacroChange = (value: ActiveSimulacro) => {
@@ -92,13 +83,15 @@ export default function Dashboard() {
 
         {menu && (
           <div className="mobile-menu-pop">
-            {Object.entries(SECTIONS).map(([key, label]) => (
+            {Object.entries(sections).map(([key, label]) => (
               <button key={key} onClick={() => goTo(key)}>{label}</button>
             ))}
           </div>
         )}
 
         <div className="desktop-grid">
+          {activo && !isDirectivo && <AvisoEvacuacion />}
+
           {active === 'inicio' && (
             <SimulacroControl
               activo={activo}
@@ -116,11 +109,16 @@ export default function Dashboard() {
             <DashboardMetrics
               reports={reports}
               sectorCount={sectors.length}
+              loading={cargandoIncidencias}
             />
           )}
 
           {active === 'historial' && (
-            <Historial items={history} />
+            <Historial items={history} loading={cargandoHistorial} />
+          )}
+
+          {active === 'usuarios' && isDirectivo && (
+            <Usuarios />
           )}
         </div>
       </main>

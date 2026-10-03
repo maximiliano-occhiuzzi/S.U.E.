@@ -5,15 +5,21 @@ const bcrypt     = require('bcryptjs');
 const jwt        = require('jsonwebtoken');
 const db         = require('../config/db');
 const { verifyToken } = require('../middlewares/auth');
+const { limiteLoginCuenta, limiteLoginIp, limitePin } = require('../middlewares/rateLimit');
 
 const REFRESH_COOKIE_NAME       = 'refresh_token';
 const REFRESH_SECRET            = process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET;
 const REFRESH_EXPIRES_IN        = process.env.JWT_REFRESH_EXPIRES_IN || '7d';
 const REFRESH_COOKIE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
+// No usar NODE_ENV === 'production' acá: la app (Capacitor, androidScheme 'http') habla con
+// un backend http sin TLS, y una cookie `secure` nunca se guarda por http -> la sesion se
+// perdia al cerrar la app. Se activa explicitamente con COOKIE_SECURE=true cuando haya HTTPS.
+const COOKIE_SECURE = process.env.COOKIE_SECURE === 'true';
+
 const cookieOptions = {
   httpOnly: true,
-  secure:   process.env.NODE_ENV === 'production',
+  secure:   COOKIE_SECURE,
   sameSite: 'lax',
   maxAge:   REFRESH_COOKIE_MAX_AGE_MS,
   path:     '/api/auth',
@@ -35,8 +41,10 @@ function firmarRefreshToken(usuario) {
   );
 }
 
-router.post('/login', async (req, res) => {
-  const { email, password } = req.body;
+router.post('/login', limiteLoginIp, limiteLoginCuenta, async (req, res) => {
+  const { email, password } = req.body || {};
+  if (typeof email !== 'string' || typeof password !== 'string')
+    return res.status(400).json({ ok: false, mensaje: 'Email y contraseña son obligatorios.' });
 
   if (!email || !password)
     return res.status(400).json({ ok: false, mensaje: 'Email y contraseña son obligatorios.' });
@@ -61,7 +69,9 @@ router.post('/login', async (req, res) => {
     const token = firmarAccessToken(usuario);
     const refreshToken = firmarRefreshToken(usuario);
     res.cookie(REFRESH_COOKIE_NAME, refreshToken, cookieOptions);
-    return res.status(200).json({ ok: true, token, nombre: usuario.nombre, rol: usuario.rol, tiene_pin: usuario.pin_hash !== null });
+    // refreshToken también va en el body: la app del celular (origen suefatima.local -> backend por IP)
+    // es cross-site y Android descarta la cookie; la app lo guarda en el dispositivo y lo manda en /refresh.
+    return res.status(200).json({ ok: true, token, refreshToken, nombre: usuario.nombre, rol: usuario.rol, tiene_pin: usuario.pin_hash !== null });
   } catch (err) {
     console.error('[POST /login]', err.message);
     return res.status(500).json({ ok: false, mensaje: 'Error interno del servidor.' });
@@ -69,7 +79,7 @@ router.post('/login', async (req, res) => {
 });
 
 router.post('/refresh', async (req, res) => {
-  const refreshToken = req.cookies?.[REFRESH_COOKIE_NAME];
+  const refreshToken = req.cookies?.[REFRESH_COOKIE_NAME] || req.body?.refreshToken;
   if (!refreshToken)
     return res.status(401).json({ ok: false, mensaje: 'No hay sesion activa.' });
   try {
@@ -83,7 +93,7 @@ router.post('/refresh', async (req, res) => {
     const token = firmarAccessToken(usuario);
     const nuevoRefreshToken = firmarRefreshToken(usuario);
     res.cookie(REFRESH_COOKIE_NAME, nuevoRefreshToken, cookieOptions);
-    return res.status(200).json({ ok: true, token, nombre: usuario.nombre, rol: usuario.rol, tiene_pin: usuario.pin_hash !== null });
+    return res.status(200).json({ ok: true, token, refreshToken: nuevoRefreshToken, nombre: usuario.nombre, rol: usuario.rol, tiene_pin: usuario.pin_hash !== null });
   } catch (err) {
     res.clearCookie(REFRESH_COOKIE_NAME, { path: '/api/auth' });
     return res.status(401).json({ ok: false, mensaje: 'Sesion invalida o expirada.' });
@@ -95,7 +105,7 @@ router.post('/logout', (_req, res) => {
   return res.status(200).json({ ok: true, mensaje: 'Sesion cerrada.' });
 });
 
-router.post('/set-pin', verifyToken, async (req, res) => {
+router.post('/set-pin', verifyToken, limitePin, async (req, res) => {
   const { pin } = req.body;
   if (!pin || !/^\d{4}$/.test(String(pin)))
     return res.status(400).json({ ok: false, mensaje: 'El PIN debe ser exactamente 4 digitos numericos.' });
@@ -109,7 +119,7 @@ router.post('/set-pin', verifyToken, async (req, res) => {
   }
 });
 
-router.post('/verify-pin', verifyToken, async (req, res) => {
+router.post('/verify-pin', verifyToken, limitePin, async (req, res) => {
   const { pin } = req.body;
   if (!pin || !/^\d{4}$/.test(String(pin)))
     return res.status(400).json({ ok: false, mensaje: 'El PIN debe ser exactamente 4 digitos numericos.' });

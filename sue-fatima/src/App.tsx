@@ -1,13 +1,28 @@
-import { useState, useEffect } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom';
+import { Capacitor } from '@capacitor/core';
 import { useAuth } from '@/context/AuthContext';
-import Login     from '@/pages/Login';
-import Dashboard from '@/pages/Dashboard';
-import Mobile    from '@/pages/Mobile';
-import PinLock   from '@/components/PinLock';
-import SetupPin  from '@/components/SetupPin';
+import Login from '@/pages/Login';
+import StatusOverlay from '@/components/StatusOverlay';
+import { usePushNotifications } from '@/hooks/usePushNotifications';
+import { useRealtime } from '@/hooks/useRealtime';
 
-const PIN_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutos sin actividad → pide PIN
+// Lazy: solo se descargan cuando hacen falta (despues del login), asi la
+// pantalla de login aparece de inmediato sin esperar el bundle del Dashboard.
+const Dashboard = lazy(() => import('@/pages/Dashboard'));
+const Mobile    = lazy(() => import('@/pages/Mobile'));
+const PinLock   = lazy(() => import('@/components/PinLock'));
+const SetupPin  = lazy(() => import('@/components/SetupPin'));
+
+const PIN_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutos sin actividad -> pide PIN
+
+function ScreenLoader() {
+  return (
+    <div className="loading-screen">
+      <span className="spinner" />Cargando S.U.E.
+    </div>
+  );
+}
 
 function Protected() {
   const { usuario, loading } = useAuth();
@@ -17,16 +32,13 @@ function Protected() {
   const [pinConfigurado, setPinConfigurado] = useState(false);
   const [ultimaAct,      setUltimaAct]      = useState(Date.now());
 
-  // Detectar si el usuario tiene PIN configurado
   useEffect(() => {
     if (usuario) {
       setPinConfigurado(!!usuario.tiene_pin);
-      // Si no tiene PIN → setup; si tiene → bloquear hasta verificar
       setDesbloqueado(!usuario.tiene_pin);
     }
   }, [usuario]);
 
-  // Timer de inactividad
   useEffect(() => {
     if (!desbloqueado || !pinConfigurado) return;
     const eventos = ['mousemove', 'keydown', 'pointerdown', 'touchstart', 'scroll'];
@@ -45,28 +57,28 @@ function Protected() {
     };
   }, [desbloqueado, pinConfigurado, ultimaAct]);
 
-  // Bloquear al volver de background
+  // Bloquear al volver de background — inmediato, no espera a los 5 minutos.
+  // Es justamente el caso que pediste: minimizar/cerrar la app siempre pide PIN de nuevo.
+  const estabaOculto = useRef(false);
   useEffect(() => {
     const handler = () => {
-      if (!document.hidden) return;
-      if (pinConfigurado && desbloqueado) {
-        const inactivo = Date.now() - ultimaAct;
-        if (inactivo > PIN_TIMEOUT_MS) setDesbloqueado(false);
+      if (document.hidden) {
+        estabaOculto.current = true;
+        return;
       }
+      if (estabaOculto.current && pinConfigurado) {
+        setDesbloqueado(false);
+      }
+      estabaOculto.current = false;
     };
     document.addEventListener('visibilitychange', handler);
     return () => document.removeEventListener('visibilitychange', handler);
-  }, [pinConfigurado, desbloqueado, ultimaAct]);
+  }, [pinConfigurado]);
 
-  if (loading) return (
-    <div className="loading-screen">
-      <span className="spinner" />Cargando S.U.E.
-    </div>
-  );
+  if (loading) return <ScreenLoader />;
 
   if (!usuario) return <Navigate to="/login" replace state={{ from: location }} />;
 
-  // Primera vez → configurar PIN
   if (!pinConfigurado) {
     return (
       <SetupPin onDone={() => {
@@ -77,7 +89,6 @@ function Protected() {
     );
   }
 
-  // Tiene PIN pero está bloqueado → verificar
   if (!desbloqueado) {
     return (
       <PinLock onUnlock={() => {
@@ -90,16 +101,37 @@ function Protected() {
   return <Outlet />;
 }
 
+function InicioSegunPlataforma() {
+  // La app instalada (Capacitor) siempre usa la versión con pestañas abajo,
+  // pensada para celular. El navegador de escritorio sigue viendo el Dashboard.
+  return Capacitor.isNativePlatform() ? <Mobile /> : <Dashboard />;
+}
+
 function App() {
+  const { logoutPhase } = useAuth();
+  usePushNotifications();
+  useRealtime(); // canal en vivo: cambios al instante + docentes conectados
+
   return (
-    <Routes>
-      <Route path="/login" element={<Login />} />
-      <Route element={<Protected />}>
-        <Route path="/"       element={<Dashboard />} />
-        <Route path="/mobile" element={<Mobile />} />
-      </Route>
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+    <>
+      <Suspense fallback={<ScreenLoader />}>
+        <Routes>
+          <Route path="/login" element={<Login />} />
+          <Route element={<Protected />}>
+            <Route path="/"       element={<InicioSegunPlataforma />} />
+            <Route path="/mobile" element={<Mobile />} />
+          </Route>
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </Suspense>
+
+      <StatusOverlay
+        show={logoutPhase !== 'idle'}
+        phase={logoutPhase === 'loading' ? 'loading' : 'success'}
+        title="Cerrando sesión"
+        subtitle={logoutPhase === 'loading' ? 'Espere por favor...' : 'Ha cerrado sesión'}
+      />
+    </>
   );
 }
 

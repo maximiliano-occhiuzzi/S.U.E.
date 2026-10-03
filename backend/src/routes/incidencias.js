@@ -3,6 +3,7 @@ const express                     = require('express');
 const router                      = express.Router();
 const db                          = require('../config/db');
 const mqttClient                  = require('../config/mqtt');
+const realtime                    = require('../utils/realtime');
 const { verifyToken, requireRol } = require('../middlewares/auth');
 
 const TOPIC_INCIDENCIAS = 'sue/incidencias';
@@ -167,6 +168,9 @@ router.post('/', verifyToken, async (req, res) => {
       else     console.log(`[MQTT] -> ${TOPIC_INCIDENCIAS}:`, payload);
     });
 
+    // Avisar en vivo: el dashboard/estado de los demás se actualiza al instante
+    realtime.emitir('incidencia', { id_reporte, id_simulacro });
+
     return res.status(201).json({
       ok:           true,
       mensaje:      'Incidencia registrada correctamente.',
@@ -185,7 +189,7 @@ router.post('/', verifyToken, async (req, res) => {
 
 // ─── PATCH /api/incidencias/:id/estado ────────────────────────────────────────
 // Permite cambiar el estado de una incidencia: activa → atendida → resuelta
-router.patch('/:id/estado', verifyToken, async (req, res) => {
+router.patch('/:id/estado', verifyToken, requireRol('directivo'), async (req, res) => {
   const id_reporte = parseInt(req.params.id, 10);
   const { estado } = req.body;
 

@@ -13,6 +13,8 @@ import {
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import api from '@/services/api';
+import { ahoraServidor } from '@/services/clock';
+import { REFRESH_EVENT } from '@/hooks/useSimulacroActivo';
 
 export type ActiveSimulacro = { id_simulacro: number; fecha_inicio: string; observaciones?: string } | null;
 
@@ -27,10 +29,14 @@ type Props = {
 };
 
 export function useElapsed(start?: string) {
-  const [now, setNow] = useState(Date.now());
+  // Hora según el SERVIDOR (no la del dispositivo): así todos los dispositivos muestran el mismo
+  // tiempo y el cronómetro no queda en 00:00:00 si el reloj del celu/PC va atrasado.
+  const [now, setNow] = useState(ahoraServidor);
   useEffect(() => {
     if (!start) return;
-    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    setNow(ahoraServidor());
+    // 250 ms: el segundo cambia casi a la vez en todos los dispositivos (con 1000 ms podía atrasar hasta 1 s)
+    const timer = window.setInterval(() => setNow(ahoraServidor()), 250);
     return () => window.clearInterval(timer);
   }, [start]);
   if (!start) return '00:00:00';
@@ -49,10 +55,27 @@ export default function SimulacroControl({ activo, isDirectivo, onChange, sector
     setBusy(true);
     try {
       if (activo) {
-        await api.put(`/api/simulacros/${activo.id_simulacro}/finalizar`);
+        try {
+          await api.put(`/api/simulacros/${activo.id_simulacro}/finalizar`);
+        } catch (err: any) {
+          // Si otro usuario ya lo finalizó (404/409), igual sincronizamos a "sin simulacro".
+          const status = err?.response?.status;
+          if (status !== 404 && status !== 409) throw err;
+        }
         onChange(null);
       } else {
-        const { data } = await api.post('/api/simulacros/iniciar', { observaciones });
+        let data: { id_simulacro: number; fecha_inicio: string };
+        try {
+          ({ data } = await api.post('/api/simulacros/iniciar', { observaciones }));
+        } catch (err: any) {
+          // 409: otro usuario ya inició uno al mismo tiempo. No es un error para quien tocó INICIAR:
+          // se sincroniza y pasa a ver el simulacro activo.
+          if (err?.response?.status === 409) {
+            window.dispatchEvent(new Event(REFRESH_EVENT));
+            return;
+          }
+          throw err;
+        }
         onChange({
   id_simulacro: data.id_simulacro,
   fecha_inicio: data.fecha_inicio,

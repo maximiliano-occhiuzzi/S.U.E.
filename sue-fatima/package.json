@@ -6,12 +6,15 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:web": "vite build --mode web --outDir dist-web --emptyOutDir",
     "lint": "eslint .",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.app.json"
   },
   "dependencies": {
+    "@capacitor/android": "^8.5.1",
     "@capacitor/core": "^8.5.1",
+    "@capacitor/push-notifications": "^8.1.2",
     "axios": "^1.7.7",
     "cookie-parser": "^1.4.7",
     "lucide-react": "^0.446.0",

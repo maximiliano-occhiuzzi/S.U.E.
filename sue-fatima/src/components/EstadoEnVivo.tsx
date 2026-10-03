@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
-import api from '@/services/api';
+import { useState } from 'react';
+import { useIncidencias } from '@/hooks/useIncidencias';
+import { SkeletonCards } from './Skeleton';
 import { Clock3 } from 'lucide-react';
 import { IncidentIcon, PanelHeading } from './SimulacroControl';
 import type { ActiveSimulacro } from './SimulacroControl';
@@ -46,22 +47,9 @@ export default function EstadoEnVivo({
   compact?: boolean;
   refreshKey?: number;
 }) {
-  const [reports, setReports] = useState<Report[]>([]);
+  // Incidencias del simulacro activo (se actualizan en vivo) + estado de primera carga.
+  const { reports, cargando } = useIncidencias(activo, refreshKey);
   const [filter,  setFilter]  = useState('todas');
-
-  useEffect(() => {
-    if (!activo) { setReports([]); return; }
-    let mounted = true;
-    const load = () =>
-      api.get(`/api/incidencias/${activo.id_simulacro}`)
-        .then(({ data }) => {
-          if (mounted) setReports(Array.isArray(data?.incidencias) ? data.incidencias : []);
-        })
-        .catch(() => undefined);
-    load();
-    const timer = window.setInterval(load, 10000);
-    return () => { mounted = false; window.clearInterval(timer); };
-  }, [activo, refreshKey]);
 
   const filters = ['todas', ...Object.keys(labels)];
   const shown   = filter === 'todas' ? reports : reports.filter(r => r.tipo_incidencia === filter);
@@ -79,7 +67,9 @@ export default function EstadoEnVivo({
       </div>
 
       <div className="report-list">
-        {shown.length === 0 ? (
+        {cargando ? (
+          <SkeletonCards n={3} />
+        ) : shown.length === 0 ? (
           <div className="empty-state">
             <Clock3 size={24} />
             <strong>{activo ? 'Esperando reportes' : 'Sin simulacro activo'}</strong>

@@ -3,10 +3,33 @@ const express                     = require('express');
 const router                      = express.Router();
 const bcrypt                      = require('bcryptjs');
 const db                          = require('../config/db');
-const { verifyToken, requireRol } = require('../middlewares/auth');
+const { verifyToken, requireRol, olvidarUsuario } = require('../middlewares/auth');
 
 const DOMINIO_INSTITUCIONAL = 'fatimarem.edu.ar';
 const ROLES_VALIDOS         = ['directivo', 'docente'];
+
+// ─── POST /api/usuarios/device-token ──────────────────────────────────────────
+// Cualquier usuario logueado registra el token FCM de su dispositivo actual.
+router.post('/device-token', verifyToken, async (req, res) => {
+  const { token } = req.body;
+  if (!token || typeof token !== 'string') {
+    return res.status(400).json({ ok: false, mensaje: 'token es requerido.' });
+  }
+
+  const conn = await db.getConnection();
+  try {
+    await conn.execute(
+      `UPDATE usuarios SET fcm_token = ? WHERE id_usuario = ?`,
+      [token, req.usuario.id_usuario]
+    );
+    return res.status(200).json({ ok: true });
+  } catch (err) {
+    console.error('[POST /usuarios/device-token]', err.message);
+    return res.status(500).json({ ok: false, mensaje: 'Error interno del servidor.' });
+  } finally {
+    conn.release();
+  }
+});
 
 // ─── GET /api/usuarios ────────────────────────────────────────────────────────
 // Lista todos los usuarios activos
@@ -164,6 +187,7 @@ router.patch('/:id', verifyToken, requireRol('directivo'), async (req, res) => {
 
     valores.push(id);
     await conn.execute(`UPDATE usuarios SET ${campos.join(', ')} WHERE id_usuario = ?`, valores);
+    olvidarUsuario(id);
 
     return res.status(200).json({ ok: true, mensaje: 'Usuario actualizado correctamente.' });
 
@@ -199,6 +223,7 @@ router.delete('/:id', verifyToken, requireRol('directivo'), async (req, res) => 
       return res.status(404).json({ ok: false, mensaje: 'Usuario no encontrado.' });
 
     await conn.execute('UPDATE usuarios SET activo = 0 WHERE id_usuario = ?', [id]);
+    olvidarUsuario(id);
 
     return res.status(200).json({ ok: true, mensaje: 'Usuario dado de baja correctamente.' });
 

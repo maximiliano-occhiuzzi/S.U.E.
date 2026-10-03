@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "290799667140",
+    "project_id": "suefatima-5d311",
+    "storage_bucket": "suefatima-5d311.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:290799667140:android:432a3ab36e1e8565af4691",
+        "android_client_info": {
+          "package_name": "com.suefatima.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDNPHXXp408gVA9eJFTNKfvT-oKSOnjP4k"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

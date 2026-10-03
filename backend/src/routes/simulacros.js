@@ -4,6 +4,8 @@ const router                   = express.Router();
 const db                       = require('../config/db');
 const mqttClient               = require('../config/mqtt');
 const { verifyToken, requireRol } = require('../middlewares/auth');
+const { enviarPushATodos }     = require('../utils/push');
+const realtime                 = require('../utils/realtime');
 
 const TOPIC_SIMULACRO = 'sue/simulacro';
 
@@ -40,6 +42,8 @@ router.get('/activo', verifyToken, async (req, res) => {
     return res.status(200).json({
       ok:        true,
       simulacro: rows[0] ?? null,
+      // Hora del servidor: los dispositivos la usan como referencia del cronómetro
+      servidor_ahora: new Date().toISOString(),
     });
   } catch (err) {
     console.error('[GET /simulacros/activo]', err.message);
@@ -136,7 +140,16 @@ router.post('/iniciar', verifyToken, requireRol('directivo'), async (req, res) =
   }
 
   const conn = await db.getConnection();
+  let lockObtenido = false;
   try {
+    // Exclusión mutua: si dos directivos tocan INICIAR al mismo tiempo, el segundo espera
+    // acá y después ve el simulacro del primero (en vez de crear dos activos a la vez).
+    const [[lock]] = await conn.query("SELECT GET_LOCK('sue_iniciar_simulacro', 5) AS ok");
+    lockObtenido = Number(lock.ok) === 1;
+    if (!lockObtenido) {
+      return res.status(409).json({ ok: false, mensaje: 'Otro usuario está iniciando un simulacro. Reintentá en unos segundos.' });
+    }
+
     // Verificar que no haya otro simulacro activo
     const [activos] = await conn.execute(
       `SELECT id_simulacro FROM simulacros WHERE estado = 'activo' LIMIT 1`
@@ -177,18 +190,32 @@ router.post('/iniciar', verifyToken, requireRol('directivo'), async (req, res) =
     // Activar timbre via Tasmota
     mqttClient.publish('cmnd/drillmaster/POWER', 'ON', { qos: 1 });
 
+    // Avisar en vivo a todos los dispositivos conectados
+    realtime.emitir('simulacro', { evento: 'iniciado', id_simulacro, tipo });
+
+    // Notificación push a todos los dispositivos registrados (no bloquea la respuesta)
+    enviarPushATodos({
+      titulo: tipo === 'emergencia' ? '🚨 Emergencia activada' : '🔔 Simulacro iniciado',
+      cuerpo: nombre || `Se inició un ${tipo}. Tocá para ver el estado en vivo.`,
+      data:   { tipo: 'SIMULACRO_INICIADO', id_simulacro: String(id_simulacro) },
+    }).catch(err => console.error('[Push] Error en iniciar simulacro:', err.message));
+
     return res.status(201).json({
       ok:           true,
       mensaje:      'Simulacro iniciado correctamente.',
       id_simulacro,
       tipo,
       fecha_inicio: fechaInicio.toISOString(),
+      servidor_ahora: new Date().toISOString(),
     });
 
   } catch (err) {
     console.error('[POST /simulacros/iniciar]', err.message);
     return res.status(500).json({ ok: false, mensaje: 'Error interno del servidor.' });
   } finally {
+    if (lockObtenido) {
+      try { await conn.query("SELECT RELEASE_LOCK('sue_iniciar_simulacro')"); } catch { /* se libera sola al cerrar la conexión */ }
+    }
     conn.release();
   }
 });
@@ -214,10 +241,15 @@ router.put('/:id/finalizar', verifyToken, requireRol('directivo'), async (req, r
 
     const fechaFin = new Date();
 
-    await conn.execute(
-      `UPDATE simulacros SET estado = 'finalizado', fecha_fin = ? WHERE id_simulacro = ?`,
+    // UPDATE atómico: solo cambia si TODAVÍA está activo. Si dos usuarios tocan FINALIZAR a la
+    // vez, uno gana y el otro recibe 409; no se pisa fecha_fin ni se apaga el timbre dos veces.
+    const [upd] = await conn.execute(
+      `UPDATE simulacros SET estado = 'finalizado', fecha_fin = ? WHERE id_simulacro = ? AND estado = 'activo'`,
       [fechaFin, id_simulacro]
     );
+    if (upd.affectedRows === 0) {
+      return res.status(409).json({ ok: false, mensaje: 'El simulacro ya fue finalizado por otro usuario.' });
+    }
 
     const duracion = calcularDuracion(rows[0].fecha_inicio, fechaFin);
 
@@ -238,6 +270,9 @@ router.put('/:id/finalizar', verifyToken, requireRol('directivo'), async (req, r
 
     // Apagar timbre via Tasmota
     mqttClient.publish('cmnd/drillmaster/POWER', 'OFF', { qos: 1 });
+
+    // Avisar en vivo a todos los dispositivos conectados
+    realtime.emitir('simulacro', { evento: 'finalizado', id_simulacro });
 
     return res.status(200).json({
       ok:           true,
